@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物理演算ガチャメーカー Ver.7 (カラフル版)</title>
+    <style>
+        /* --- 全体のレイアウト --- */
+        body {
+            font-family: "Helvetica Neue", Arial, sans-serif;
+            background-color: #f0f4f8;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            width: 95%;
+            height: 90%;
+            max-width: 1400px;
+            background-color: #fff;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            overflow: hidden;
+            padding: 20px;
+            gap: 30px;
+        }
+
+        /* ガチャ画面：水色に変更いたしましたわ */
+        .game-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #e0f7fa; /* ライトブルー */
+            border-radius: 15px;
+            border: 2px solid #b2ebf2;
+            padding: 10px;
+            position: relative;
+            transition: background-color 0.3s, box-shadow 0.3s;
+        }
+
+        .game-area.rare-glow {
+            background-color: #fff9c4;
+            box-shadow: inset 0 0 60px #ffd700;
+        }
+
+        .gacha-btn {
+            margin-top: 15px;
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: white;
+            background: linear-gradient(45deg, #03a9f4, #00bcd4);
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(3, 169, 244, 0.4);
+            transition: transform 0.1s, box-shadow 0.1s;
+            z-index: 10;
+        }
+        .gacha-btn:active { transform: scale(0.95); }
+
+        canvas {
+            border: 2px solid #81d4fa;
+            border-radius: 10px;
+            background-color: transparent;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 設定画面：黄緑に変更いたしましたわ */
+        .settings-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            background-color: #f1f8e9; /* ライト黄緑 */
+            border-radius: 15px;
+            border: 2px solid #dcedc1;
+            overflow-y: auto;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #33691e;
+            border-bottom: 2px solid #8bc34a;
+            padding-bottom: 10px;
+            display: inline-block;
+        }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding: 12px;
+            background-color: rgba(255, 255, 255, 0.7);
+            border-radius: 10px;
+            border: 1px solid #c5e1a5;
+        }
+
+        input[type="text"] { padding: 8px; border: 1px solid #ced4da; border-radius: 5px; flex: 2; }
+        input[type="number"] { padding: 8px; border: 1px solid #ced4da; border-radius: 5px; width: 65px; text-align: center; }
+        input[type="color"] { border: 1px solid #ced4da; border-radius: 5px; width: 45px; height: 45px; cursor: pointer; background: white; padding: 2px; }
+
+        .btn-outline { padding: 10px 20px; border: 1px solid #7cb342; background: white; color: #558b2f; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        .btn-outline:hover { background-color: #f1f8e9; }
+        .delete-btn { background-color: #ef5350; color: white; border: none; border-radius: 8px; width: 35px; height: 35px; cursor: pointer; }
+
+        .info-text { font-size: 0.85rem; color: #689f38; margin-top: 5px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="game-area" id="gameArea">
+        <canvas id="world"></canvas>
+        <button class="gacha-btn" id="pullBtn">ガチャを回す！</button>
+    </div>
+
+    <div class="settings-area">
+        <h2>⚙️ ガチャ設定</h2>
+        <p class="info-text">カプセルは「純色」をご用意いたしましたわ。上限は40個です。</p>
+        <div id="itemsList"></div>
+        <div class="action-btns" style="margin-top:20px; display:flex; gap:10px;">
+            <button class="btn-outline" onclick="addNewItem()">＋ 新しい景品を追加</button>
+            <button class="btn-outline" onclick="resetItems()">初期設定に戻す</button>
+        </div>
+        <div style="margin-top: 20px; padding: 15px; background: #fffde7; border: 1px solid #fff59d; border-radius: 10px;">
+            <strong style="color: #fbc02d;">激レア演出対象 (5%以下):</strong><br>
+            <span id="rareListText" style="font-size: 0.9rem; color: #d32f2f;">なし</span>
+        </div>
+    </div>
+</div>
+
+<script>
+    const MAX_CAPSULES = 40;
+    
+    // デフォルトを「純色」に変更いたしましたわ
+    let gachaItems = [
+        { id: 1, name: "ノーマル賞", weight: 100, color: "#00FF00" }, // 純色 緑
+        { id: 2, name: "ちょっといい賞", weight: 50, color: "#00FFFF" }, // 純色 シアン
+        { id: 3, name: "レア賞", weight: 20, color: "#FFFF00" }, // 純色 黄
+        { id: 4, name: "スーパーレア", weight: 5, color: "#FF0000" }, // 純色 赤
+        { id: 5, name: "ウルトラ激レア", weight: 1, color: "#FF00FF" }  // 純色 マゼンタ
+    ];
+
+    const canvas = document.getElementById('world');
+    const ctx = canvas.getContext('2d');
+    const gameArea = document.getElementById('gameArea');
+    let capsules = [];
+    let width, height;
+    
+    let isSlowMotion = false;
+    let slowMotionTimer = 0;
+    let timeScale = 1.0;
+    
+    window.onload = () => { resizeCanvas(); renderSettings(); loop(); };
+    window.addEventListener('resize', resizeCanvas);
+
+    function resizeCanvas() {
+        const rect = gameArea.getBoundingClientRect();
+        const btnHeight = document.getElementById('pullBtn').offsetHeight + 30;
+        canvas.width = rect.width - 24; 
+        canvas.height = rect.height - btnHeight;
+        width = canvas.width;
+        height = canvas.height;
+    }
+
+    document.getElementById('pullBtn').addEventListener('click', pullGacha);
+
+    function pullGacha() {
+        const totalWeight = gachaItems.reduce((sum, item) => sum + item.weight, 0);
+        let random = Math.random() * totalWeight;
+        let selected = null;
+
+        for (let item of gachaItems) {
+            if (random < item.weight) { selected = item; break; }
+            random -= item.weight;
+        }
+        if (selected) spawnCapsule(selected, totalWeight);
+    }
+
+    function spawnCapsule(item, totalWeight) {
+        const probability = item.weight / totalWeight;
+        const isRare = (probability * 100) <= 5.0;
+
+        // 大きさは1.8倍を維持
+        let baseRadius = 27; 
+        let variableRadius = 54;
+        let radius = baseRadius + (probability * variableRadius);
+
+        let x = Math.random() * (width - radius * 2) + radius;
+        let y = -radius - 20;
+
+        // 純色の鮮やかさを活かしつつ、立体感を出すための調整ですわ
+        const lightColor = adjustColor(item.color, 60);
+        const darkColor = adjustColor(item.color, -70);
+
+        const capsule = {
+            x, y, vx: 0, vy: 0, radius,
+            color: item.color,
+            lightColor: lightColor,
+            darkColor: darkColor,
+            restitution: 0.25,
+            mass: radius, 
+            isRare,
+            glowFrame: 0,
+            id: Date.now() + Math.random()
+        };
+
+        capsules.push(capsule);
+        if (capsules.length > MAX_CAPSULES) capsules.shift();
+        if (isRare) triggerRareEffect();
+    }
+
+    function triggerRareEffect() {
+        isSlowMotion = true;
+        timeScale = 0.2; 
+        slowMotionTimer = 180; 
+        gameArea.classList.add('rare-glow');
+    }
+
+    function loop() {
+        updatePhysics();
+        draw();
+        requestAnimationFrame(loop);
+    }
+
+    function updatePhysics() {
+        if (isSlowMotion) {
+            slowMotionTimer--;
+            if (slowMotionTimer <= 0) {
+                isSlowMotion = false;
+                timeScale = 1.0;
+                gameArea.classList.remove('rare-glow');
+            }
+        }
+
+        const gravity = 0.5 * timeScale * timeScale;
+        const dt = timeScale;
+
+        for (let c of capsules) {
+            c.vy += gravity;
+            c.x += c.vx * dt;
+            c.y += c.vy * dt;
+
+            if (c.y + c.radius > height) {
+                c.y = height - c.radius;
+                c.vy *= -c.restitution;
+                c.vx *= 0.9; 
+            }
+            if (c.x - c.radius < 0) { c.x = c.radius; c.vx *= -c.restitution; }
+            if (c.x + c.radius > width) { c.x = width - c.radius; c.vx *= -c.restitution; }
+        }
+
+        for (let k = 0; k < 4; k++) {
+            for (let i = 0; i < capsules.length; i++) {
+                for (let j = i + 1; j < capsules.length; j++) {
+                    resolveCollision(capsules[i], capsules[j]);
+                }
+            }
+        }
+    }
+
+    function resolveCollision(c1, c2) {
+        const dx = c2.x - c1.x;
+        const dy = c2.y - c1.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const minDist = c1.radius + c2.radius;
+
+        if (distance < minDist && distance > 0) {
+            const overlap = minDist - distance;
+            const nx = dx / distance;
+            const ny = dy / distance;
+            const totalMass = c1.mass + c2.mass;
+            c1.x -= nx * overlap * (c2.mass / totalMass);
+            c1.y -= ny * overlap * (c2.mass / totalMass);
+            c2.x += nx * overlap * (c1.mass / totalMass);
+            c2.y += ny * overlap * (c1.mass / totalMass);
+
+            const rvx = c2.vx - c1.vx;
+            const rvy = c2.vy - c1.vy;
+            const velAlongNormal = rvx * nx + rvy * ny;
+            if (velAlongNormal > 0) return;
+            let j = -(1 + Math.min(c1.restitution, c2.restitution)) * velAlongNormal;
+            j /= (1 / c1.mass + 1 / c2.mass);
+            c1.vx -= (j * nx / c1.mass) * 0.95;
+            c1.vy -= (j * ny / c1.mass) * 0.95;
+            c2.vx += (j * nx / c2.mass) * 0.95;
+            c2.vy += (j * ny / c2.mass) * 0.95;
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, width, height);
+        for (let c of capsules) drawCapsule(c);
+    }
+
+    function drawCapsule(c) {
+        ctx.save();
+        ctx.translate(c.x, c.y);
+
+        if (c.isRare) {
+            c.glowFrame += 0.15;
+            if (isSlowMotion) {
+                ctx.shadowBlur = 60 + Math.abs(Math.sin(c.glowFrame * 2)) * 40;
+                ctx.shadowColor = "#ffd700";
+                ctx.globalCompositeOperation = "lighter";
+            } else {
+                ctx.shadowBlur = 25 + Math.sin(c.glowFrame) * 10;
+                ctx.shadowColor = "#ffcc00";
+            }
+        }
+
+        ctx.beginPath();
+        ctx.arc(0, 0, c.radius, 0, Math.PI * 2);
+
+        let grad = ctx.createRadialGradient(
+            -c.radius * 0.4, -c.radius * 0.4, c.radius * 0.1, 
+            0, 0, c.radius 
+        );
+        grad.addColorStop(0, c.lightColor); 
+        grad.addColorStop(0.5, c.color);     
+        grad.addColorStop(1, c.darkColor);   
+
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    function renderSettings() {
+        const list = document.getElementById('itemsList');
+        list.innerHTML = "";
+        const totalWeight = gachaItems.reduce((sum, item) => sum + item.weight, 0);
+        let rareItems = [];
+
+        gachaItems.forEach((item, index) => {
+            const prob = (item.weight / totalWeight) * 100;
+            const div = document.createElement('div');
+            div.className = 'setting-row';
+            div.innerHTML = `
+                <input type="color" value="${item.color}" onchange="updateItem(${index}, 'color', this.value)">
+                <input type="text" value="${item.name}" onchange="updateItem(${index}, 'name', this.value)">
+                <div style="display:flex; flex-direction:column; align-items:center; font-size:0.8rem;">
+                    <label style="color:#558b2f; font-weight:bold;">重み</label>
+                    <input type="number" min="1" value="${item.weight}" onchange="updateItem(${index}, 'weight', this.value)">
+                </div>
+                <div style="font-size:0.9rem; width:60px; text-align:right; font-weight:bold; color:#33691e;">${prob.toFixed(1)}%</div>
+                <button class="delete-btn" onclick="deleteItem(${index})" ${gachaItems.length <= 1 ? 'disabled' : ''}>×</button>
+            `;
+            list.appendChild(div);
+            if (prob <= 5.0) rareItems.push(`${item.name} (${prob.toFixed(1)}%)`);
+        });
+        document.getElementById('rareListText').innerText = rareItems.length > 0 ? rareItems.join(", ") : "なし";
+    }
+
+    window.addNewItem = function() {
+        // 新しく追加する際も純色（青系など）をデフォルトにしますわ
+        gachaItems.push({ id: Date.now(), name: "新しい景品", weight: 50, color: "#0000FF" });
+        renderSettings();
+    };
+    window.deleteItem = function(index) {
+        if (gachaItems.length > 1) { gachaItems.splice(index, 1); renderSettings(); }
+    };
+    window.updateItem = function(index, key, value) {
+        if (key === 'weight') value = parseInt(value) || 1;
+        gachaItems[index][key] = value;
+        renderSettings();
+    };
+    window.resetItems = function() {
+        if(confirm("リセットいたしますか？")) {
+            gachaItems = [
+                { id: 1, name: "ノーマル賞", weight: 100, color: "#00FF00" },
+                { id: 2, name: "ちょっといい賞", weight: 50, color: "#00FFFF" },
+                { id: 3, name: "レア賞", weight: 20, color: "#FFFF00" },
+                { id: 4, name: "スーパーレア", weight: 5, color: "#FF0000" },
+                { id: 5, name: "ウルトラ激レア", weight: 1, color: "#FF00FF" }
+            ];
+            renderSettings();
+        }
+    };
+
+    function adjustColor(color, amount) {
+        return '#' + color.replace(/^#/, '').replace(/../g, color => 
+            ('0'+Math.min(255, Math.max(0, parseInt(color, 16) + amount)).toString(16)).substr(-2));
+    }
+</script>
+</body>
+</html>
